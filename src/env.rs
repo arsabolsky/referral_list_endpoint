@@ -72,7 +72,14 @@ pub fn check_vars() -> Env {
             save_var("TIMELINE_SEND_CRYPT_KEY", &password);
             password
         }),
-        working_path: "rm_working_path".to_string(),
+        working_path: {
+            let here = std::env::current_dir().unwrap().join("rm_working_path");
+            if std::fs::create_dir_all(&here).is_err() {
+                log::error!("Creating directory {here:?} failed!");
+            }
+            let here = here.to_string_lossy();
+            here.to_string()
+        },
     }
 }
 
