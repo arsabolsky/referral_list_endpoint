@@ -1,17 +1,13 @@
 // Jackson Coxson & Karter Arritt
 
-use std::collections::HashMap;
 use chrono::{ Duration, Utc };
 use church::ChurchClient;
-use dialoguer::{ theme::ColorfulTheme, Select };
 use indicatif::ProgressBar;
-use log::info;
 
 mod bearer;
 mod church;
 mod env;
 mod persons;
-mod report;
 mod send;
 
 const CLI_OPTIONS: [&str; 2] = ["send timeline", "exit"];
@@ -34,70 +30,12 @@ async fn main() {
         }
         return;
     }
-
-    let select_options = CLI_OPTIONS.iter()
-        .enumerate()
-        .map(|(i, val)| format!("{} - {}", val, CLI_DESCRIPTONS[i]))
-        .collect::<Vec<String>>();
-
-    loop {
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Choose an option")
-            .default(0)
-            .items(&select_options)
-            .interact()
-            .unwrap();
-
-        match parse_argument(CLI_OPTIONS[selection], &mut church_client).await {
-            Ok(true) => {
-                continue;
-            }
-            Ok(false) => {
-                return;
-            }
-            Err(e) => {
-                println!("Ran into an error while processing: {e:?}");
-            }
-        }
-    }
+    let _ = send(&mut church_client).await;
 }
 
 async fn parse_argument(arg: &str, church_client: &mut ChurchClient) -> anyhow::Result<bool> {
     match arg {
-        "send timeline" => {
-            let da_peeps = store_timeline(church_client).await?;
-
-            let out = persons::convert_referral_to_gas(da_peeps);
-
-            let encrypted_data = match
-                send::encrypt_struct_with_otp(
-                    out,
-                    church_client.env.timeline_send_crypt_key.clone()
-                )
-            {
-                Ok(data) => data,
-                Err(e) => {
-                    println!("Error encrypting data: {}", e);
-                    return Ok(false); // or return Err(e) if needed
-                }
-            };
-
-            match
-                send::send_to_google_apps_script(
-                    encrypted_data,
-                    church_client.env.timeline_send_url.clone()
-                ).await
-            {
-                Ok(decrypted_json) => {
-                    println!("Success! Decrypted response: {}", decrypted_json);
-                }
-                Err(e) => {
-                    eprintln!("Error sending request: {}", e);
-                }
-            }
-
-            Ok(true)
-        }
+        "send timeline" => send(church_client).await,
         "exit" => Ok(false),
         "help" | "-h" => {
             println!(
@@ -112,35 +50,39 @@ async fn parse_argument(arg: &str, church_client: &mut ChurchClient) -> anyhow::
     }
 }
 
-pub async fn generate_report(church_client: &mut ChurchClient) -> anyhow::Result<report::Report> {
-    let persons_list = church_client.get_cached_people_list().await?;
-    let now = Utc::now().naive_utc();
-    let persons_list: Vec<persons::Person> = persons_list
-        .into_iter()
-        .filter(|x| {
-            x.referral_status != persons::ReferralStatus::Successful &&
-                x.person_status < persons::PersonStatus::NewMember &&
-                now.signed_duration_since(x.assigned_date) > Duration::hours(48)
-        })
-        .collect();
-    info!("{} uncontacted referrals", persons_list.len());
+async fn send(church_client: &mut ChurchClient) -> anyhow::Result<bool>{
+    let da_peeps = store_timeline(church_client).await?;
 
-    let mut report = report::Report::new();
-    let bar = ProgressBar::new(persons_list.len() as u64);
-    for person in persons_list {
-        bar.inc(1);
-        if (
-            match church_client.get_person_last_contact(&person).await? {
-                Some(t) => now.signed_duration_since(t) > Duration::hours(48),
-                None => true,
-            }
-        ) {
-            report.add_person(person);
+    let out = persons::convert_referral_to_gas(da_peeps);
+
+    let encrypted_data = match
+        send::encrypt_struct_with_otp(
+            out,
+            church_client.env.timeline_send_crypt_key.clone()
+        )
+    {
+        Ok(data) => data,
+        Err(e) => {
+            println!("Error encrypting data: {}", e);
+            return Ok(false); // or return Err(e) if needed
+        }
+    };
+
+    match
+        send::send_to_google_apps_script(
+            encrypted_data,
+            church_client.env.timeline_send_url.clone()
+        ).await
+    {
+        Ok(decrypted_json) => {
+            println!("Success! Decrypted response: {}", decrypted_json);
+        }
+        Err(e) => {
+            eprintln!("Error sending request: {}", e);
         }
     }
 
-    report.save_report(&church_client.env)?;
-    Ok(report)
+    return Ok(true);
 }
 
 pub async fn store_timeline(
@@ -209,26 +151,6 @@ pub async fn store_timeline(
             }
         );
 
-        // Print the timeline (t) when this_guy is created
-        // println!("Timeline for {} ({}):", this_guy.name, this_guy.area);
-        // for event in &t {
-        //     let formatted_date = event.item_date.format("%Y-%m-%d %H:%M:%S").to_string();  // Format date-time as YYYY-MM-DD HH:MM:SS
-
-        //     let event_status = match event.status {
-        //         Some(true) => "Completed",
-        //         Some(false) => "Not completed",
-        //         None => "No status",
-        //     };
-
-        //     println!(
-        //         "[{}] Event Type: {:?}, Date: {}, Status: {}",
-        //         this_guy.name,
-        //         event.item_type,
-        //         formatted_date,
-        //         event_status
-        //     );
-        // }
-
         let yesterday = chrono::Local::now().naive_utc().date() - Duration::days(1);
 
         let last_new_referral = t
@@ -242,28 +164,16 @@ pub async fn store_timeline(
         while current_date <= yesterday && total_days < 7 {
             total_days += 1;
 
-            // Format the current date to a readable format
-            //let formatted_date = current_date.format("%Y-%m-%d").to_string();  // Format as YYYY-MM-DD
-
-            // Log the current action and day
-            //println!("{}: checking day {} (date: {})", this_guy.name, total_days, formatted_date);
-
             let c = check_day(current_date, t.clone());
             if c == -1 {
                 contact_days += 1;
-                // Log when the day check is -1
-                //println!("{}: day {} (date: {}) resulted in -1 (contact day)", this_guy.name, total_days, formatted_date);
                 break;
             } else {
                 contact_days += c;
-                // Log the result of check_day
-                //println!("{}: day {} (date: {}) resulted in {}", this_guy.name, total_days, formatted_date, c);
             }
 
             current_date = current_date + Duration::days(1);
         }
-
-        //println!("{}: finished checking days. Contact days: {}, Total days checked: {}", this_guy.name, contact_days, total_days);
 
         this_guy.set_score(format!("{contact_days}/{total_days}"));
 
@@ -302,56 +212,4 @@ fn check_day(day: chrono::naive::NaiveDate, person: Vec<persons::TimelineEvent>)
 
     // If no events with status Some(true) were found, return 1
     return 1;
-}
-
-pub async fn get_average(
-    church_client: &mut ChurchClient
-) -> anyhow::Result<HashMap<String, usize>> {
-    let mut contacts = church_client.env.load_contacts()?;
-
-    let persons_list = church_client.get_cached_people_list().await?.to_vec();
-    let now = Utc::now().naive_utc();
-    let persons_list: Vec<persons::Person> = persons_list
-        .into_iter()
-        .filter(|x| {
-            x.referral_status != persons::ReferralStatus::NotAttempted &&
-                x.person_status < persons::PersonStatus::NewMember &&
-                now.signed_duration_since(x.assigned_date) < Duration::days(42)
-        })
-        .collect();
-
-    let mut zones = HashMap::new();
-    let bar = ProgressBar::new(persons_list.len() as u64);
-    for person in persons_list {
-        if let Some(zone_name) = &person.zone_name {
-            bar.inc(1);
-            let t = if let Some(t) = contacts.get(&person.guid) {
-                t.to_owned()
-            } else if let Some(t) = church_client.get_person_contact_time(&person).await? {
-                contacts.insert(person.guid, t);
-                t
-            } else {
-                continue;
-            };
-            let zone = match zones.get_mut(zone_name) {
-                Some(z) => z,
-                None => {
-                    zones.insert(zone_name.clone(), Vec::new());
-                    zones.get_mut(zone_name).unwrap()
-                }
-            };
-            zone.push(t);
-        }
-    }
-    bar.finish();
-
-    church_client.env.save_contacts(&contacts)?;
-
-    let mut res = HashMap::new();
-    for (k, v) in zones {
-        let sum: usize = v.iter().sum();
-        let avg = sum / v.len();
-        res.insert(k, avg);
-    }
-    Ok(res)
 }

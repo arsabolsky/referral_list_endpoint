@@ -1,4 +1,4 @@
-// Jackson Coxson
+// Jackson Coxson, Karter Arritt, & Adam Morgan
 
 use chrono::naive::serde::ts_milliseconds;
 use chrono::{ NaiveDateTime, Duration };
