@@ -1,4 +1,4 @@
-# Referral List
+# Referral List - For Webhook Endpoint
 
 If you don't know what this is, it isn't for you.
 
