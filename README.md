@@ -10,6 +10,10 @@ Install Rust and cargo via [rustup](https://rustup.rs)
 cargo build --release
 ```
 
+## Google Apps Script Post Handler
+
+To setup the Google Apps Script Handler, follow the instructions at the beginning of the file.
+
 ## Running
 
 The program will set itself up. Either run the binary you built above or run
