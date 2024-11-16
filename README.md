@@ -21,13 +21,8 @@ cargo run --release
 
 ## TODO
 
-- [x] Get referrals from church servers
-- [x] Parse them into neat data structures
-- [x] Get and parse timeline info
-- [x] Make a user-friendly TUI
-- [ ] Integrate with Holly
-- [ ] Generate easy reports
-- [ ] Document API calls
+- [X] Send to an network endpoint (encrypted)
+- [ ] Add Endpoint Details
 
 ## Debugging
 
@@ -35,8 +30,3 @@ You can set the environment variable ``RUST_LOG`` to ``info`` to get more
 detailed logs.
 Set this either in your .env file or ``export`` it on Linux.
 
-## Why no Python?
-
-The original source code for this project was written in Python.
-As the complexity grew and the scope changed, it became unmaintainable due to
-Python's poor typing and checking. Code that is collaborated on shouldn't be in Python.
