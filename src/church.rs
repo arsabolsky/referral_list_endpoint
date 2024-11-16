@@ -2,7 +2,6 @@
 // Code to interact with church servers
 
 use std::{ io::Write, path::PathBuf, str::FromStr, sync::Arc, time::{ SystemTime, UNIX_EPOCH } };
-
 use anyhow::Context;
 use chrono::NaiveDateTime;
 use log::{ info, warn };

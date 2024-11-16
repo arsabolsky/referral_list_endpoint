@@ -2,16 +2,14 @@
 
 use std::{
     collections::HashMap,
-    io::{BufRead, Write},
+    io::{ BufRead, Write },
     path::PathBuf,
     str::FromStr,
-    fs::OpenOptions
+    fs::OpenOptions,
 };
 
-
 use crate::persons;
-use dialoguer::{theme::ColorfulTheme, Input, Password, Select};
-//use log::error;
+use dialoguer::{ theme::ColorfulTheme, Input, Password, Select };
 use serde_json;
 
 #[derive(Clone, Debug)]
@@ -92,7 +90,9 @@ fn save_var(key: &str, val: &str) {
     // Ask if the user wants to save the value to the .env file
     let selections = &["Yes", "No"];
     let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Save this for future startups? This value will be saved in your .env file. If unsure, select yes.")
+        .with_prompt(
+            "Save this for future startups? This value will be saved in your .env file. If unsure, select yes."
+        )
         .default(0)
         .items(selections)
         .interact()
@@ -100,11 +100,7 @@ fn save_var(key: &str, val: &str) {
 
     if selection == 0 {
         // Write to the .env file
-        let mut file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(".env")
-            .unwrap();
+        let mut file = OpenOptions::new().append(true).create(true).open(".env").unwrap();
 
         // Write the sanitized variable to the .env file
         file.write_all(format!("{key}={val}\n").as_bytes()).unwrap();
@@ -135,7 +131,9 @@ impl Env {
                         }
                     }
                 }
-                Err(e) => return Err(anyhow::anyhow!(e)),
+                Err(e) => {
+                    return Err(anyhow::anyhow!(e));
+                }
             }
         }
 
@@ -145,7 +143,8 @@ impl Env {
     pub fn save_contacts(&self, contacts: &HashMap<String, usize>) -> anyhow::Result<()> {
         // Load or create the CSV file
         let csv_path = PathBuf::from_str(&self.working_path)?.join("contact_times.csv");
-        let file = std::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions
+            ::new()
             .write(true)
             .create(true)
             .truncate(true)
@@ -161,7 +160,8 @@ impl Env {
     pub fn save_data(&self, contacts: &Vec<persons::ReferralPerson>) -> anyhow::Result<()> {
         // Load or create the CSV file
         let persons_path = PathBuf::from_str(&self.working_path)?.join("data.json");
-        let file = std::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions
+            ::new()
             .write(true)
             .create(true)
             .truncate(true)

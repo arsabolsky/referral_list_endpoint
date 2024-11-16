@@ -1,8 +1,6 @@
 // Jackson Coxson & Karter Arritt
 
 use std::collections::HashMap;
-//use std::{cell::Ref, fmt::format}
-
 use chrono::{ Duration, Utc };
 use church::ChurchClient;
 use dialoguer::{ theme::ColorfulTheme, Select };

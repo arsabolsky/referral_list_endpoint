@@ -2,11 +2,9 @@
 
 use chrono::naive::serde::ts_milliseconds;
 use chrono::{ NaiveDateTime, Duration };
-//use chrono::{Datelike, Utc, TimeZone, FixedOffset, DateTime};
 use log::warn;
 use serde::{ Deserialize, Serialize };
 use serde_repr::{ Deserialize_repr, Serialize_repr };
-//use std::time::Duration;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Persons {
