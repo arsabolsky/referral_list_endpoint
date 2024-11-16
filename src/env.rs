@@ -1,19 +1,25 @@
-// Jackson Coxson
+// Jackson Coxson & Karter Arritt
 
 use std::{
     collections::HashMap,
     io::{BufRead, Write},
     path::PathBuf,
     str::FromStr,
+    fs::OpenOptions
 };
 
+
+use crate::persons;
 use dialoguer::{theme::ColorfulTheme, Input, Password, Select};
-use log::error;
+//use log::error;
+use serde_json;
 
 #[derive(Clone, Debug)]
 pub struct Env {
     pub church_username: String,
     pub church_password: String,
+    pub timeline_send_url: String,
+    pub timeline_send_crypt_key: String,
     pub working_path: String,
 }
 
@@ -43,45 +49,57 @@ pub fn check_vars() -> Env {
                 .with_confirmation("Repeat password", "Error: the passwords don't match.")
                 .interact()
                 .unwrap();
+
             save_var("CHURCH_PASSWORD", &password);
             password
         }),
-        working_path: std::env::var("WORKING_PATH").unwrap_or_else(|_| {
-            let here = std::env::current_dir().unwrap().join("rm_working_path");
-            if std::fs::create_dir_all(&here).is_err() {
-                error!("Creating directory {here:?} failed!");
-            }
-            let here = here.to_string_lossy();
+        timeline_send_url: std::env::var("TIMELINE_SEND_URL").unwrap_or_else(|_| {
             let password: String = Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Path to cache data fetched and processed from church servers. If unsure, just press enter for the default value.")
-                .default(here.to_string())
-                .interact_text()
+                .with_prompt("Enter the url to POST timeline data to")
+                .default("/".to_string())
+                .interact()
                 .unwrap();
-            save_var("WORKING_PATH", &password);
+
+            save_var("TIMELINE_SEND_URL", &password);
             password
         }),
+        timeline_send_crypt_key: std::env::var("TIMELINE_SEND_CRYPT_KEY").unwrap_or_else(|_| {
+            let password: String = Password::with_theme(&ColorfulTheme::default())
+                .with_prompt("Enter the private encryption key for POSTing the timeline data.")
+                .interact()
+                .unwrap();
+
+            save_var("TIMELINE_SEND_CRYPT_KEY", &password);
+            password
+        }),
+        working_path: "rm_working_path".to_string(),
     }
 }
 
 fn save_var(key: &str, val: &str) {
-    std::env::set_var(key, val);
-    let selections = &["Yes", "No"];
+    // Use sanitize_input to make sure we are saving a sanitized value
 
+    // Save the variable to the environment
+    std::env::set_var(key, val);
+
+    // Ask if the user wants to save the value to the .env file
+    let selections = &["Yes", "No"];
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Save this for future startups? This value will be saved in your .env file. If unsure, select yes.")
         .default(0)
-        .items(&selections[..])
+        .items(selections)
         .interact()
         .unwrap();
 
     if selection == 0 {
         // Write to the .env file
-        let mut file = std::fs::OpenOptions::new()
+        let mut file = OpenOptions::new()
             .append(true)
             .create(true)
             .open(".env")
             .unwrap();
 
+        // Write the sanitized variable to the .env file
         file.write_all(format!("{key}={val}\n").as_bytes()).unwrap();
     }
 }
@@ -130,6 +148,24 @@ impl Env {
         for (k, v) in contacts {
             writeln!(&mut writer, "{k},{v}")?;
         }
+        Ok(())
+    }
+
+    pub fn save_data(&self, contacts: &Vec<persons::ReferralPerson>) -> anyhow::Result<()> {
+        // Load or create the CSV file
+        let persons_path = PathBuf::from_str(&self.working_path)?.join("data.json");
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&persons_path)?;
+
+        let json_data = serde_json::to_string(&contacts)?;
+
+        // Write the JSON string to the file
+        let mut writer = std::io::BufWriter::new(file);
+        writer.write_all(json_data.as_bytes())?;
+
         Ok(())
     }
 }

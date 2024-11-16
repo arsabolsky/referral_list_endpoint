@@ -28,7 +28,7 @@ pub struct ChurchClient {
     cookie_store: Arc<CookieStoreMutex>,
     pub env: env::Env,
     bearer_token: Option<BearerToken>,
-    pub holly_config: Option<crate::holly::config::Config>,
+    //pub holly_config: Option<crate::holly::config::Config>,
 }
 
 impl ChurchClient {
@@ -74,14 +74,14 @@ impl ChurchClient {
             .build()
             .expect("Couldn't build the HTTP client");
 
-        let holly_config = crate::holly::config::Config::potential_load(&env).await?;
+        //let holly_config = crate::holly::config::Config::potential_load(&env).await?;
 
         Ok(Self {
             http_client,
             cookie_store,
             env,
             bearer_token,
-            holly_config,
+            //holly_config,
         })
     }
 
@@ -339,7 +339,14 @@ impl ChurchClient {
                 .await
             {
                 if let Ok(list) = list.json::<serde_json::Value>().await {
-                    let list = persons::TimelineEvent::parse_lossy(list);
+                    let mut list: Vec<persons::TimelineEvent> = persons::TimelineEvent::parse_lossy(list);
+                    
+                    //Apply MST to EST conversion for each event
+                    for event in &mut list {
+                        event.convert_mst_to_est();
+                    }
+
+
                     info!(
                         "Received {} timeline events from referral manager",
                         list.len()
