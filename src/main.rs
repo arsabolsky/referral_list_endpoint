@@ -74,8 +74,8 @@ async fn send(church_client: &mut ChurchClient) -> anyhow::Result<bool>{
             church_client.env.timeline_send_url.clone()
         ).await
     {
-        Ok(decrypted_json) => {
-            println!("Success! Decrypted response: {}", decrypted_json);
+        Ok(_) => {
+            //println!("Success! Decrypted response: {}", decrypted_json);
         }
         Err(e) => {
             eprintln!("Error sending request: {}", e);
