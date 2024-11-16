@@ -21,10 +21,11 @@ pub struct ReferralPerson {
     pub events: Vec<TimelineEvent>,
     pub score: String,
     pub area: String,
+    pub referral_status: String,
 }
 
 impl ReferralPerson {
-    pub fn new(id:String, name:String, contact_time:usize, events:Vec<TimelineEvent>, area:String) -> ReferralPerson{
+    pub fn new(id:String, name:String, contact_time:usize, events:Vec<TimelineEvent>, area:String, referral_status: String ) -> ReferralPerson{
         ReferralPerson {
             id,
             name,
@@ -32,6 +33,7 @@ impl ReferralPerson {
             events,
             score:"0/0".to_string(),
             area,
+            referral_status,
         }
     }
     pub fn set_score(&mut self, score:String ) {
@@ -47,6 +49,7 @@ pub fn convert_referral_to_gas(referral_people: Vec<ReferralPerson>) -> Vec<GASP
             contact_time,  // Decimal days
             score: referral_person.score,
             area: referral_person.area,
+            referral_status: referral_person.referral_status,
         }
     }).collect()
 }
@@ -57,6 +60,7 @@ pub struct GASPerson {
     pub contact_time: f64,  // Store the contact time in decimal days
     pub score: String,
     pub area: String,
+    pub referral_status: String,
 }
 
 // impl GASPerson {

@@ -185,6 +185,11 @@ pub async fn store_timeline(
                 Some(s) => s.clone(),  // return the String if present
                 None => String::from("default_area"),  // return a default value if None
             },
+            match person.referral_status {
+                persons::ReferralStatus::NotAttempted => "Not Attempted".to_string(),
+                persons::ReferralStatus::NotSuccessful=> "Unsuccessful".to_string(),
+                persons::ReferralStatus::Successful=> "Successful".to_string(),
+            },
         );
 
         // Print the timeline (t) when this_guy is created
@@ -213,7 +218,7 @@ pub async fn store_timeline(
         let last_new_referral = t.iter().find(|event| {
             event.item_type == persons::TimelineItemType::NewReferral
         });
-        
+
         let mut current_date: chrono::NaiveDate = last_new_referral.unwrap().item_date.date();
         let mut contact_days = 0;
         let mut total_days = 0;
