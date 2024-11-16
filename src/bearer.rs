@@ -2,7 +2,7 @@
 
 use base64::Engine;
 use log::error;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 #[derive(Clone, Debug)]
 pub struct BearerToken {
@@ -23,15 +23,15 @@ impl BearerToken {
 
         if parts.len() != 3 {
             error!("Bearer token doesn't contain the expected number of parts.");
-            return Err(anyhow::anyhow!(
-                "Bearer token doesn't contain the expected number of parts"
-            ));
+            return Err(
+                anyhow::anyhow!("Bearer token doesn't contain the expected number of parts")
+            );
         }
 
         let claims_part = parts[1]; // The middle part contains the claims
 
         // Calculate and apply the necessary padding
-        let padding_needed = (4 - claims_part.len() % 4) % 4;
+        let padding_needed = (4 - (claims_part.len() % 4)) % 4;
         let padded_claims = format!("{}{}", claims_part, "=".repeat(padding_needed));
 
         // Decode from base64 URL-safe

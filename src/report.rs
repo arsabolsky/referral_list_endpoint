@@ -1,9 +1,9 @@
 // Jackson Coxson
 
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{ collections::HashMap, path::PathBuf, str::FromStr };
 
 use log::info;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 use crate::persons::Person;
 
@@ -24,8 +24,7 @@ impl Report {
             let zone = match self.people.get_mut(&zone_id) {
                 Some(z) => z,
                 None => {
-                    self.zones
-                        .insert(zone_id, person.zone_name.unwrap_or(zone_id.to_string()));
+                    self.zones.insert(zone_id, person.zone_name.unwrap_or(zone_id.to_string()));
                     self.people.insert(zone_id, HashMap::new());
                     self.people.get_mut(&zone_id).unwrap()
                 }
@@ -49,7 +48,7 @@ impl Report {
         }
         res = format!("{res}\nUnassigned Referrals");
         for p in &self.unassigned {
-            res = format!("  - {p}")
+            res = format!("  - {p}");
         }
         res
     }
@@ -82,7 +81,8 @@ impl Report {
         let reports_path = PathBuf::from_str(&env.working_path)?.join("reports");
         std::fs::create_dir_all(&reports_path)?;
 
-        let file = std::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions
+            ::new()
             .write(true)
             .create(true)
             .truncate(true)

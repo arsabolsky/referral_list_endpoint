@@ -1,11 +1,11 @@
 // Jackson Coxson
 
 use chrono::naive::serde::ts_milliseconds;
-use chrono::{NaiveDateTime, Duration};
+use chrono::{ NaiveDateTime, Duration };
 //use chrono::{Datelike, Utc, TimeZone, FixedOffset, DateTime};
 use log::warn;
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
+use serde::{ Deserialize, Serialize };
+use serde_repr::{ Deserialize_repr, Serialize_repr };
 //use std::time::Duration;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -25,39 +25,49 @@ pub struct ReferralPerson {
 }
 
 impl ReferralPerson {
-    pub fn new(id:String, name:String, contact_time:usize, events:Vec<TimelineEvent>, area:String, referral_status: String ) -> ReferralPerson{
+    pub fn new(
+        id: String,
+        name: String,
+        contact_time: usize,
+        events: Vec<TimelineEvent>,
+        area: String,
+        referral_status: String
+    ) -> ReferralPerson {
         ReferralPerson {
             id,
             name,
             contact_time,
             events,
-            score:"0/0".to_string(),
+            score: "0/0".to_string(),
             area,
             referral_status,
         }
     }
-    pub fn set_score(&mut self, score:String ) {
+    pub fn set_score(&mut self, score: String) {
         self.score = score;
     }
 }
 
 pub fn convert_referral_to_gas(referral_people: Vec<ReferralPerson>) -> Vec<GASPerson> {
-    referral_people.into_iter().map(|referral_person| {
-        let contact_time = referral_person.contact_time as f64 / 1440.0;  // Convert minutes to decimal days
-        GASPerson {
-            name: referral_person.name,
-            contact_time,  // Decimal days
-            score: referral_person.score,
-            area: referral_person.area,
-            referral_status: referral_person.referral_status,
-        }
-    }).collect()
+    referral_people
+        .into_iter()
+        .map(|referral_person| {
+            let contact_time = (referral_person.contact_time as f64) / 1440.0; // Convert minutes to decimal days
+            GASPerson {
+                name: referral_person.name,
+                contact_time, // Decimal days
+                score: referral_person.score,
+                area: referral_person.area,
+                referral_status: referral_person.referral_status,
+            }
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GASPerson {
     pub name: String,
-    pub contact_time: f64,  // Store the contact time in decimal days
+    pub contact_time: f64, // Store the contact time in decimal days
     pub score: String,
     pub area: String,
     pub referral_status: String,
@@ -160,7 +170,6 @@ impl TimelineEvent {
 
     // Convert MST (UTC-7) to EST (UTC-5)
     pub fn convert_mst_to_est(&mut self) {
-
         //println!("Initial NaiveDateTime (MST): {}", self.item_date);
 
         self.item_date = self.item_date - Duration::hours(5); //adjust from MST to EST
