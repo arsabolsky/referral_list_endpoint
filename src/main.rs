@@ -29,15 +29,7 @@ async fn main() {
     println!("Starting referral list program... Checking environment...");
     let save_env = env::check_vars();
     env_logger::init();
-    let mut church_client: ChurchClient = match church::ChurchClient::new(save_env).await{
-        Ok(church_client) => {
-            church_client
-        }
-        Err(error) => {
-            println!("Error! {}",error);
-            return;
-        }
-    };
+    let mut church_client: ChurchClient = church::ChurchClient::new(save_env).await.unwrap();
 
 
 
