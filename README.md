@@ -26,7 +26,8 @@ cargo run --release
 ## TODO
 
 - [X] Send to an network endpoint (encrypted)
-- [ ] Add Endpoint Details
+- [X] Add Endpoint Details
+- [ ] Make the Endpoint not accept bad input
 
 ## Debugging
 
