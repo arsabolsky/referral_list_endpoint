@@ -1092,7 +1092,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "referral_list"
+name = "referral_list_endpoint"
 version = "0.1.0"
 dependencies = [
  "anyhow",
