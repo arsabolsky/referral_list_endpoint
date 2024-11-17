@@ -18,7 +18,7 @@ const CLI_DESCRIPTONS: [&str; 2] = [
 
 #[tokio::main]
 async fn main() {
-    println!("Starting referral list program... Checking environment...");
+    println!("Starting referral list endpoint program... Please wait...");
     let save_env = env::check_vars();
     env_logger::init();
     let mut church_client: ChurchClient = church::ChurchClient::new(save_env).await.unwrap();

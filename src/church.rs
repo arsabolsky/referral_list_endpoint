@@ -1,7 +1,7 @@
 // Jackson Coxson
 // Code to interact with church servers
 
-use std::{ io::Write, path::PathBuf, str::FromStr, sync::Arc, time::{ SystemTime, UNIX_EPOCH } };
+use std::{io::Write, path::PathBuf, str::FromStr, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH } };
 use anyhow::Context;
 use chrono::NaiveDateTime;
 use log::{ info, warn };
@@ -9,6 +9,7 @@ use reqwest::{ redirect::Policy, Client };
 use reqwest_cookie_store::CookieStoreMutex;
 use serde::Deserialize;
 use serde_json::json;
+use indicatif::ProgressBar;
 
 use crate::{ bearer::BearerToken, env, persons };
 
@@ -27,6 +28,8 @@ pub struct ChurchClient {
 
 impl ChurchClient {
     pub async fn new(env: env::Env) -> anyhow::Result<Self> {
+        let bar = ProgressBar::new_spinner();
+        bar.enable_steady_tick(Duration::from_millis(100));
         // Check if the bearer token exists
         let bearer_path = PathBuf::from_str(&env.working_path)?.join("bearer.token");
         let cookies_path = PathBuf::from_str(&env.working_path)?.join("cookies.json");
@@ -37,7 +40,6 @@ impl ChurchClient {
             info!("No bearer token saved");
             None
         };
-
         // Check if the file exists
         if !std::fs::exists(&cookies_path)? {
             info!("No cookies saved");
@@ -69,7 +71,7 @@ impl ChurchClient {
             .expect("Couldn't build the HTTP client");
 
         //let holly_config = crate::holly::config::Config::potential_load(&env).await?;
-
+        bar.finish_and_clear();
         Ok(Self {
             http_client,
             cookie_store,
