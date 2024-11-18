@@ -3,6 +3,7 @@
 use chrono::{Duration, Utc};
 use church::ChurchClient;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
+use log::{info, debug, error};
 use std::sync::Arc;
 use std::time::Duration as Dur;
 use tokio::sync::{Mutex, Semaphore};
@@ -14,50 +15,54 @@ mod send;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init(); // Initialize the logger
 
+    info!("Starting the referral list process...");
+    
     // Wrap MultiProgress in a Mutex so it can be safely shared and accessed
     let m = Arc::new(Mutex::new(MultiProgress::new()));
 
-    println!("Running referral_list_enpoint, please wait...");
     let env_set_bar = {
         let m = m.lock().await;
         m.add(ProgressBar::new(1)) // Only 1 step to indicate loading
     };
-    env_set_bar.set_style(ProgressStyle::default_bar()
-        .template("{spinner} {msg}").unwrap());
+    env_set_bar.set_style(ProgressStyle::default_bar().template("{spinner} {msg}").unwrap());
     env_set_bar.set_message("Loading .env data...");
     let save_env = env::check_vars();
-    env_logger::init();
     env_set_bar.inc(1);
     env_set_bar.finish_with_message(".env load finished!");
 
+    info!("Initializing Church Client...");
     let church_client_bar = {
         let m = m.lock().await;
         m.add(ProgressBar::new(1))
     };
-    church_client_bar.set_style(ProgressStyle::default_bar()
-        .template("{spinner} {msg}").unwrap());
+    church_client_bar.set_style(ProgressStyle::default_bar().template("{spinner} {msg}").unwrap());
     church_client_bar.set_message("Loading Church Client data...");
-    // Wrap ChurchClient in tokio's Mutex
     let church_client = Arc::new(Mutex::new(church::ChurchClient::new(save_env).await.unwrap()));
     church_client_bar.inc(1);
     church_client_bar.finish_with_message("Church Client load finished!");
 
-    // Pass the wrapped ChurchClient to store_timeline
-    let _ = send(Arc::clone(&m), church_client).await;  // Pass the cloned Arc
+    // Start the send operation with logging
+    info!("Starting send operation...");
+    let result = send(Arc::clone(&m), Arc::clone(&church_client)).await;
+    match result {
+        Ok(_) => info!("Send operation completed successfully."),
+        Err(e) => error!("Error during send operation: {}", e),
+    }
 }
 
 async fn send(m: Arc<Mutex<MultiProgress>>, church_client: Arc<Mutex<ChurchClient>>) -> anyhow::Result<bool> {
-
+    info!("Fetching person data for timeline...");
     let da_peeps = store_timeline(Arc::clone(&m), Arc::clone(&church_client)).await?;
 
     let send_bar = {
         let m = m.lock().await;
         m.add(ProgressBar::new(3))
     };
-    send_bar.set_style(ProgressStyle::default_bar()
-        .template("{spinner} {msg}").unwrap());
+    send_bar.set_style(ProgressStyle::default_bar().template("{spinner} {msg}").unwrap());
     send_bar.set_message("Encrypting and Sending data...");
+    debug!("Starting data conversion for {} people", da_peeps.len());
 
     let out = persons::convert_referral_to_gas(da_peeps);
     send_bar.inc(1);
@@ -67,7 +72,7 @@ async fn send(m: Arc<Mutex<MultiProgress>>, church_client: Arc<Mutex<ChurchClien
         match send::encrypt_struct_with_otp(out, church_client.env.timeline_send_crypt_key.clone()) {
             Ok(data) => data,
             Err(e) => {
-                println!("Error encrypting data: {}", e);
+                error!("Error encrypting data: {}", e);
                 return Ok(false); // or return Err(e) if needed
             }
         }
@@ -83,11 +88,9 @@ async fn send(m: Arc<Mutex<MultiProgress>>, church_client: Arc<Mutex<ChurchClien
     )
     .await
     {
-        Ok(_) => {
-            //println!("Success! Decrypted response: {}", decrypted_json);
-        }
+        Ok(_) => info!("Data sent successfully to Google Apps Script."),
         Err(e) => {
-            eprintln!("Error sending request: {}", e);
+            error!("Error sending request to Google Apps Script: {}", e);
         }
     }
     send_bar.inc(1);
@@ -100,8 +103,9 @@ pub async fn store_timeline(
     m: Arc<Mutex<MultiProgress>>,
     church_client: Arc<Mutex<ChurchClient>> // Now using tokio::sync::Mutex
 ) -> anyhow::Result<Vec<persons::ReferralPerson>> {
+    info!("Fetching cached person list...");
     let persons_list = {
-        let mut church_client = church_client.lock().await;  // Lock using tokio::sync::Mutex
+        let mut church_client = church_client.lock().await;
         church_client.get_cached_people_list().await?.to_vec()
     };
 
@@ -114,54 +118,48 @@ pub async fn store_timeline(
         })
         .collect();
 
+    info!("Processing {} person records...", persons_list.len());
+
     let person_overall_bar = {
         let m = m.lock().await;
         m.add(ProgressBar::new(persons_list.len() as u64))
     };
-    person_overall_bar.set_style(ProgressStyle::default_bar()
-        .template("{wide_bar} ({percent}%) {eta:4} {msg}")?);
+    person_overall_bar.set_style(ProgressStyle::default_bar().template("{wide_bar} ({percent}%) {eta:4} {msg}")?);
     person_overall_bar.set_message("Retrieving/Processing person records...");
 
-    // Create a semaphore with a limit of 10 concurrent tasks
     let semaphore = Arc::new(Semaphore::new(10));
-
-    let mut tasks = Vec::new(); // to store task handles
+    let mut tasks = Vec::new();
 
     for person in persons_list {
-        // Clone the Arc for each task
         let m = Arc::clone(&m);
         let church_client = Arc::clone(&church_client);
-        let semaphore = Arc::clone(&semaphore);  // Clone the semaphore as well
+        let semaphore = Arc::clone(&semaphore);
         let task = tokio::spawn(async move {
-            // Try to acquire a permit from the semaphore
-            let _permit = semaphore.acquire().await.unwrap();  // This will block if there are 10 tasks running
+            let _permit = semaphore.acquire().await.unwrap();
 
             let person_bar = {
                 let m = m.lock().await;
                 m.add(ProgressBar::new(3))
             };
-            person_bar.set_style(ProgressStyle::default_bar()
-                .template("{spinner} {msg}").unwrap());
+            person_bar.set_style(ProgressStyle::default_bar().template("{spinner} {msg}").unwrap());
             person_bar.set_message(format!("Processing person: {}", person.first_name));
             person_bar.enable_steady_tick(Dur::from_millis(100));
 
             let t: Vec<persons::TimelineEvent> = {
-                let mut church_client = church_client.lock().await;  // Lock using tokio::sync::Mutex
+                let mut church_client = church_client.lock().await;
                 if let Ok(t) = church_client.get_person_timeline(&person).await {
                     t.iter()
-                        .filter(
-                            |event| matches!(
-                                event.item_type,
-                                persons::TimelineItemType::Contact |
-                                persons::TimelineItemType::Teaching |
-                                persons::TimelineItemType::NewReferral
-                            ) &&
-                            (if event.item_type != persons::TimelineItemType::NewReferral && event.status.is_none() {
-                                false
-                            } else {
-                                true
-                            })
-                        )
+                        .filter(|event| matches!(
+                            event.item_type,
+                            persons::TimelineItemType::Contact |
+                            persons::TimelineItemType::Teaching |
+                            persons::TimelineItemType::NewReferral
+                        ) &&
+                        (if event.item_type != persons::TimelineItemType::NewReferral && event.status.is_none() {
+                            false
+                        } else {
+                            true
+                        }))
                         .cloned()
                         .collect()
                 } else {
@@ -170,7 +168,7 @@ pub async fn store_timeline(
             };
 
             let cont_time = {
-                let mut church_client = church_client.lock().await;  // Lock using tokio::sync::Mutex
+                let mut church_client = church_client.lock().await;
                 match church_client.get_person_contact_time(&person).await {
                     Ok(Some(t)) => t,
                     _ => return None,
@@ -182,10 +180,7 @@ pub async fn store_timeline(
                 person.first_name,
                 cont_time,
                 t.clone(),
-                match person.area_name {
-                    Some(s) => s.clone(),
-                    None => String::from("default_area"),
-                },
+                person.area_name.unwrap_or_else(|| String::from("default_area")),
                 match person.referral_status {
                     persons::ReferralStatus::NotAttempted => "Not Attempted",
                     persons::ReferralStatus::NotSuccessful => "Unsuccessful",
@@ -222,7 +217,6 @@ pub async fn store_timeline(
         tasks.push(task);
     }
 
-    // Wait for all tasks to finish and collect their results
     let mut da_peeps = Vec::new();
     for task in tasks {
         match task.await.unwrap() {
@@ -230,43 +224,38 @@ pub async fn store_timeline(
                 da_peeps.push(person);
             }
             None => {
-                // Handle case where the task didn't return a valid person
+                debug!("Person task did not return valid data.");
             }
         }
         person_overall_bar.inc(1);
     }
 
     person_overall_bar.finish_with_message("Person Records Processed!");
-
-    let church_client = church_client.lock().await;  // Lock before saving
+    info!("Saving processed data...");
+    let church_client = church_client.lock().await;
     church_client.env.save_data(&da_peeps)?;
 
+    info!("Processed data successfully saved.");
     Ok(da_peeps)
 }
 
 fn check_day(day: chrono::naive::NaiveDate, person: Vec<persons::TimelineEvent>) -> i32 {
-    // Find all events that match the day and the 'Contact' type
     let events_on_day: Vec<&persons::TimelineEvent> = person
         .iter()
-        .filter(|event| {
-            event.item_date.date() == day
-                && (event.item_type == persons::TimelineItemType::Contact
-                    || event.item_type == persons::TimelineItemType::Teaching)
-        })
+        .filter(|event| event.item_date.date() == day
+            && (event.item_type == persons::TimelineItemType::Contact
+                || event.item_type == persons::TimelineItemType::Teaching))
         .collect();
 
-    // If there are no events for the day, return 0
     if events_on_day.is_empty() {
         return 0;
     }
 
-    // Check each event. If any event has a status of Some(true), return -1
     for event in events_on_day {
         if event.status.unwrap_or(false) {
             return -1;
         }
     }
 
-    // If no events with status Some(true) were found, return 1
     1
 }
