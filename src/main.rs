@@ -124,8 +124,9 @@ pub async fn store_timeline(
         let m = m.lock().await;
         m.add(ProgressBar::new(persons_list.len() as u64))
     };
-    person_overall_bar.set_style(ProgressStyle::default_bar().template("{wide_bar} ({percent}%) {eta:4} {msg}")?);
+    person_overall_bar.set_style(ProgressStyle::default_bar().template("[{elapsed:4}] {wide_bar:.cyan/blue} [-{eta:4}] {percent}% {msg} ({pos}/{len})")?);
     person_overall_bar.set_message("Retrieving/Processing person records...");
+    person_overall_bar.enable_steady_tick(Dur::from_millis(1000));
 
     let semaphore = Arc::new(Semaphore::new(10));
     let mut tasks = Vec::new();
