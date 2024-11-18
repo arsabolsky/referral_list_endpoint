@@ -1103,7 +1103,6 @@ dependencies = [
  "dotenvy",
  "env_logger",
  "indicatif",
- "lazy_static",
  "log",
  "rand",
  "reqwest",
