@@ -3,6 +3,7 @@
 use chrono::{ Duration, Utc };
 use church::ChurchClient;
 use indicatif::ProgressBar;
+use std::time::Duration as dur;
 
 mod bearer;
 mod church;
@@ -18,14 +19,18 @@ const CLI_DESCRIPTONS: [&str; 2] = [
 
 #[tokio::main]
 async fn main() {
+    let spinner = ProgressBar::new_spinner();
+    spinner.enable_steady_tick(dur::from_millis(100));
     println!("Starting referral list endpoint program... Please wait...");
     let save_env = env::check_vars();
     env_logger::init();
     let mut church_client: ChurchClient = church::ChurchClient::new(save_env).await.unwrap();
+    spinner.finish();
 
-    let mut args = std::env::args();
-    if args.len() > 1 {
-        if let Err(e) = parse_argument(&args.nth(1).unwrap(), &mut church_client).await {
+
+    let mut args = std::env::args().skip(1); // Skip the first argument (binary name)
+    if let Some(arg) = args.next() {
+        if let Err(e) = parse_argument(&arg, &mut church_client).await {
             println!("Ran into an error while processing: {e:?}");
         }
         return;
@@ -82,7 +87,7 @@ async fn send(church_client: &mut ChurchClient) -> anyhow::Result<bool>{
         }
     }
 
-    return Ok(true);
+    Ok(true)
 }
 
 pub async fn store_timeline(
@@ -131,7 +136,7 @@ pub async fn store_timeline(
         let cont_time: usize;
         if let Some(t) = church_client.get_person_contact_time(&person).await? {
             cont_time = t;
-            t;
+            //t;
         } else {
             continue;
         }
@@ -145,10 +150,10 @@ pub async fn store_timeline(
                 None => String::from("default_area"), // return a default value if None
             },
             match person.referral_status {
-                persons::ReferralStatus::NotAttempted => "Not Attempted".to_string(),
-                persons::ReferralStatus::NotSuccessful => "Unsuccessful".to_string(),
-                persons::ReferralStatus::Successful => "Successful".to_string(),
-            }
+                persons::ReferralStatus::NotAttempted => "Not Attempted",
+                persons::ReferralStatus::NotSuccessful => "Unsuccessful",
+                persons::ReferralStatus::Successful => "Successful",
+            }.to_string()
         );
 
         let yesterday = chrono::Local::now().naive_utc().date() - Duration::days(1);
@@ -211,5 +216,5 @@ fn check_day(day: chrono::naive::NaiveDate, person: Vec<persons::TimelineEvent>)
     }
 
     // If no events with status Some(true) were found, return 1
-    return 1;
+    1
 }
