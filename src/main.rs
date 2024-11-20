@@ -145,7 +145,7 @@ pub async fn store_timeline(
     person_overall_bar.set_message("Retrieving/Processing person records...");
     person_overall_bar.enable_steady_tick(Dur::from_millis(1000));
 
-    let semaphore = Arc::new(Semaphore::new(10));
+    let semaphore = Arc::new(Semaphore::new(3));
     let mut tasks = Vec::new();
 
     for person in persons_list {
