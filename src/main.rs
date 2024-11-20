@@ -2,16 +2,19 @@
 
 use chrono::{Duration, Utc};
 use church::ChurchClient;
+//use env::Env;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
 use log::{info, debug, error};
-use std::sync::Arc;
+use std::{string, sync::Arc};
 use std::time::Duration as Dur;
 use tokio::sync::{Mutex, Semaphore};
+
 mod bearer;
 mod church;
 mod env;
 mod persons;
 mod send;
+mod runcode;
 
 #[tokio::main]
 async fn main() {
@@ -28,7 +31,21 @@ async fn main() {
     };
     env_set_bar.set_style(ProgressStyle::default_bar().template("{spinner} {msg}").unwrap());
     env_set_bar.set_message("Loading .env data...");
-    let save_env = env::check_vars();
+    let save_env = match runcode::check_for_runcode() {
+        Some(env) => {
+            env
+        }
+        None => {
+            let env = env::check_vars();
+            match runcode::build_base64_runcode_from_env(&env) {
+                Some(runcode) => {
+                    println!("Runcode: {}", runcode)
+                }
+                None => {}
+            };
+            env
+        }
+    };
     env_set_bar.inc(1);
     env_set_bar.finish_with_message(".env load finished!");
 

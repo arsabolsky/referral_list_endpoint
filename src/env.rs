@@ -11,8 +11,9 @@ use std::{
 use crate::persons;
 use dialoguer::{ theme::ColorfulTheme, Input, Password, Select };
 use serde_json;
+//use serde::Deserialize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Env {
     pub church_username: String,
     pub church_password: String,
