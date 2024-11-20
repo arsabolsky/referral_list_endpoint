@@ -39,7 +39,7 @@ async fn main() {
             let env = env::check_vars();
             match runcode::build_base64_runcode_from_env(&env) {
                 Some(runcode) => {
-                    println!("Runcode: {}", runcode)
+                    println!("Runcode: {} . You can also pass this as an argument to referral_list_endpoint.exe", runcode)
                 }
                 None => {}
             };
