@@ -39,7 +39,7 @@ async fn main() {
             let env = env::check_vars();
             match runcode::build_base64_runcode_from_env(&env) {
                 Some(runcode) => {
-                    println!("Runcode: {}", runcode)
+                    println!("Runcode: {} . You can also pass this as an argument to referral_list_endpoint.exe", runcode)
                 }
                 None => {}
             };
@@ -149,7 +149,7 @@ pub async fn store_timeline(
     person_overall_bar.set_message("Retrieving/Processing person records...");
     person_overall_bar.enable_steady_tick(Dur::from_millis(1000));
 
-    let semaphore = Arc::new(Semaphore::new(10));
+    let semaphore = Arc::new(Semaphore::new(3));
     let mut tasks = Vec::new();
 
     for person in persons_list {
