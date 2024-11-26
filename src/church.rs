@@ -10,8 +10,7 @@ use reqwest_cookie_store::CookieStoreMutex;
 use serde::Deserialize;
 use serde_json::json;
 
-
-use crate::{ bearer::BearerToken, env, persons };
+use crate::{ bearer::BearerToken, env, persons};
 
 pub const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36";
