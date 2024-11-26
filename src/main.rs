@@ -54,9 +54,13 @@ async fn main() {
         let m = m.lock().await;
         m.add(ProgressBar::new(1))
     };
+
+
     church_client_bar.set_style(ProgressStyle::default_bar().template("{spinner} {msg}").unwrap());
     church_client_bar.set_message("Loading Church Client data...");
+    
     let church_client = Arc::new(Mutex::new(church::ChurchClient::new(save_env).await.unwrap()));
+    
     church_client_bar.inc(1);
     church_client_bar.finish_with_message("Church Client load finished!");
 
@@ -211,6 +215,7 @@ pub async fn store_timeline(
             let mut current_date = last_new_referral.unwrap().item_date.date();
             let mut contact_days = 0;
             let mut total_days = 0;
+            this_guy.referral_status = "Not Attempted".to_string();
 
             while current_date <= yesterday && total_days < 7 {
                 total_days += 1;
@@ -218,9 +223,11 @@ pub async fn store_timeline(
                 let c = check_day(current_date, t.clone());
                 if c == -1 {
                     contact_days += 1;
+                    this_guy.referral_status = "Successful".to_string();
                     break;
                 } else {
                     contact_days += c;
+                    if !(this_guy.referral_status == "Successful") && contact_days==1 { this_guy.referral_status = "Unsuccessful".to_string()};
                 }
 
                 current_date = current_date + Duration::days(1);
