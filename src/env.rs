@@ -18,7 +18,6 @@ pub struct Env {
     pub church_username: String,
     pub church_password: String,
     pub timeline_send_url: String,
-    pub timeline_send_crypt_key: String,
     pub working_path: String,
 }
 
@@ -60,15 +59,6 @@ pub fn check_vars() -> Env {
                 .unwrap();
 
             save_var("TIMELINE_SEND_URL", &password);
-            password
-        }),
-        timeline_send_crypt_key: std::env::var("TIMELINE_SEND_CRYPT_KEY").unwrap_or_else(|_| {
-            let password: String = Password::with_theme(&ColorfulTheme::default())
-                .with_prompt("Enter the private encryption key for POSTing the timeline data.")
-                .interact()
-                .unwrap();
-
-            save_var("TIMELINE_SEND_CRYPT_KEY", &password);
             password
         }),
         working_path: {

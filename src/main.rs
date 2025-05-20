@@ -5,7 +5,7 @@ use church::ChurchClient;
 //use env::Env;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
 use log::{info, debug, error};
-use std::{string, sync::Arc};
+use std::sync::Arc;
 use std::time::Duration as Dur;
 use tokio::sync::{Mutex, Semaphore};
 
@@ -82,26 +82,17 @@ async fn send(m: Arc<Mutex<MultiProgress>>, church_client: Arc<Mutex<ChurchClien
         m.add(ProgressBar::new(3))
     };
     send_bar.set_style(ProgressStyle::default_bar().template("{spinner} {msg}").unwrap());
-    send_bar.set_message("Encrypting and Sending data...");
+    send_bar.set_message("Sending data...");
     debug!("Starting data conversion for {} people", da_peeps.len());
 
     let out = persons::convert_referral_to_gas(da_peeps);
+
     send_bar.inc(1);
 
-    let encrypted_data = {
-        let church_client = church_client.lock().await;
-        match send::encrypt_struct_with_otp(out, church_client.env.timeline_send_crypt_key.clone()) {
-            Ok(data) => data,
-            Err(e) => {
-                error!("Error encrypting data: {}", e);
-                return Ok(false); // or return Err(e) if needed
-            }
-        }
-    };
+    let json_data = serde_json::to_value(&out)?;
     send_bar.inc(1);
-
     match send::send_to_google_apps_script(
-        encrypted_data,
+        json_data,
         {
             let church_client = church_client.lock().await;
             church_client.env.timeline_send_url.clone()
@@ -115,7 +106,7 @@ async fn send(m: Arc<Mutex<MultiProgress>>, church_client: Arc<Mutex<ChurchClien
         }
     }
     send_bar.inc(1);
-    send_bar.finish_with_message("Data Encrypted and Sent!");
+    send_bar.finish_with_message("Data Sent!");
 
     Ok(true)
 }
