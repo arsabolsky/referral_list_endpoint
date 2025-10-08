@@ -168,6 +168,7 @@ impl ChurchClient {
             .await?;
 
         let interaction_handle = interact_response.interaction_handle;
+        // println!("interaction_handle: {}", interaction_handle);
 
         info!("Calling /introspect with interactionHandle");
         let state_handle = self
@@ -180,7 +181,16 @@ impl ChurchClient {
             .await?
             .json::<StateHandle>()
             .await?
-            .state_handle;     
+            .state_handle;
+
+
+            // let status = state_handle.status();
+            // let text = state_handle.text().await?;
+            // println!("Status: {}", status);
+            // println!("Raw response body:\n{}", text);
+            
+            // println!("state_handle: {}", state_handle);
+
 
         // Send the username
         info!("Sending the username");
@@ -223,6 +233,8 @@ impl ChurchClient {
             })
             .ok_or_else(|| anyhow::anyhow!("No password authenticator found"))?;
 
+            // println!("password_authenticator_id: {}", password_authenticator_id);
+
         // Challenge the password authenticator
         info!("Challenging the password authenticator");
         let body = json!({
@@ -243,19 +255,22 @@ impl ChurchClient {
             .json()
             .await?;
 
+            // println!("challenge_response: {:?}", challenge_response);
         // Extract the state handle from the challenge response
         let state_handle = challenge_response["stateHandle"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("No state handle in challenge response"))?
             .to_string();
 
+            // println!("state_handle after challenge: {}", state_handle);
+
         // Send the password
-        #[derive(Deserialize)]
+        #[derive(Debug, Deserialize)]
         struct PasswordResponse {
             success: SuccessResponse,
         }
 
-        #[derive(Deserialize)]
+        #[derive(Debug, Deserialize)]
         struct SuccessResponse {
             href: String,
         }
@@ -268,6 +283,7 @@ impl ChurchClient {
             }
         })
         .to_string();
+        // println!("Password body: {}", body);
         let challenge_answer_response = self
             .http_client
             .post("https://id.churchofjesuschrist.org/idp/idx/challenge/answer")
@@ -278,6 +294,8 @@ impl ChurchClient {
             .await?
             .json::<PasswordResponse>()
             .await?;
+            // EVERYTHING BREAK ABOVE THIS LINE
+            println!("challenge_answer_response: {:?}", challenge_answer_response);
 
         // Set cookies
         info!("Getting the success href");
@@ -295,13 +313,14 @@ impl ChurchClient {
             .send()
             .await?
             .json::<serde_json::Value>()
-            .await?["token"]
+            .await?
             .clone();
+            println!("Raw token from JSON: {}", token);
         let token = (match token {
             serde_json::Value::String(t) => Ok(t),
             _ => Err(anyhow::anyhow!("No token in response json")),
         })?;
-
+        println!("Raw token: {}", token);
         self.save_cookies().await?;
         self.write_bearer_token(&token).await?;
 
