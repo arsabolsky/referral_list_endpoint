@@ -110,58 +110,77 @@ impl ChurchClient {
     pub async fn login(&mut self) -> anyhow::Result<BearerToken> {
         info!("Logging into referral manager");
         self.cookie_store.lock().unwrap().clear();
+        use serde::Deserialize;
 
-        // Get the inital login page
-        info!("Loading the initial login page");
-        let res = self
-            .http_client
-            .get("https://referralmanager.churchofjesuschrist.org")
-            .send()
-            .await?
-            .text()
-            .await?;
+        use sha2::{Digest, Sha256};
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        use rand::{distributions::Alphanumeric, Rng};
 
-        // Extract the JSON embedded in the HTML
-        let start_token = "\"stateToken\":\"";
-        let end_token = "\",";
-
-        let start_index = res
-            .find(start_token)
-            .ok_or_else(|| anyhow::anyhow!("stateToken not found in response"))?
-            + start_token.len();
-
-        let end_index = res[start_index..]
-            .find(end_token)
-            .ok_or_else(|| anyhow::anyhow!("End token not found in response"))?
-            + start_index;
-
-        // Ensure the indices are valid
-        if start_index >= end_index {
-            return Err(anyhow::anyhow!("Invalid indices for stateToken extraction"));
+        #[derive(Deserialize)]
+        struct InteractResponse {
+            #[serde(rename = "interaction_handle")]
+            interaction_handle: String,
         }
-
-        let state_token = &res[start_index..end_index];
-        let state_token = decode_escape_sequences(state_token)?;
-        let state_token: String = serde_json::from_str(&format!("\"{state_token}\"")).unwrap();
 
         #[derive(Deserialize)]
         struct StateHandle {
             #[serde(rename = "stateHandle")]
             state_handle: String,
         }
-        // Trade the state token for the state handle
-        info!("Trading the token for the state handle");
+
+        fn generate_random_string(len: usize) -> String {
+            rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(len)
+                .map(char::from)
+                .collect()
+        }
+
+        fn generate_code_challenge(verifier: &str) -> String {
+            let hash = Sha256::digest(verifier.as_bytes());
+            URL_SAFE_NO_PAD.encode(hash)
+        }
+
+        info!("Generating PKCE and security parameters");
+        let code_verifier = generate_random_string(64);
+        let code_challenge = generate_code_challenge(&code_verifier);
+        let state = generate_random_string(32);
+        let nonce = generate_random_string(32);
+
+        info!("Calling /interact to get interactionHandle");
+        let interact_response = self
+            .http_client
+            .post("https://id.churchofjesuschrist.org/oauth2/default/v1/interact")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Accept", "application/json")
+            .form(&[
+                ("client_id", "0oaodd1guy51rqnJo357"),
+                ("scope", "openid profile offline_access"),
+                ("redirect_uri", "https://referralmanager.churchofjesuschrist.org/login"),
+                ("code_challenge", &code_challenge),
+                ("code_challenge_method", "S256"),
+                ("state", &state),
+                ("nonce", &nonce),
+            ])
+            .send()
+            .await?
+            .json::<InteractResponse>()
+            .await?;
+
+        let interaction_handle = interact_response.interaction_handle;
+
+        info!("Calling /introspect with interactionHandle");
         let state_handle = self
             .http_client
             .post("https://id.churchofjesuschrist.org/idp/idx/introspect")
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .body(format!("{{\"stateToken\": \"{state_token}\"}}"))
+            .body(json!({ "interactionHandle": interaction_handle }).to_string())
             .send()
             .await?
             .json::<StateHandle>()
             .await?
-            .state_handle;
+            .state_handle;     
 
         // Send the username
         info!("Sending the username");
