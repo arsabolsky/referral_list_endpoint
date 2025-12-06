@@ -3,24 +3,53 @@
 
 use anyhow::Context;
 use chrono::NaiveDateTime;
-use log::{info, warn};
+use log::info;
 use reqwest::{redirect::Policy, Client};
 use reqwest_cookie_store::CookieStoreMutex;
 use serde::Deserialize;
 use serde_json::json;
 use std::{
-    io::Write,
     path::PathBuf,
-    str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{bearer::BearerToken, env, persons};
 
-pub const USER_AGENT: &str =
+const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36";
 const MAX_RETRIES: u8 = 3;
+
+// These constants are left for future use and clarity of the OAuth2 flow
+#[allow(dead_code)]
+const AUTH_BASE_URL: &str = "https://id.churchofjesuschrist.org";
+#[allow(dead_code)]
+const REFERRAL_BASE_URL: &str = "https://referralmanager.churchofjesuschrist.org";
+#[allow(dead_code)]
+const OAUTH_CLIENT_ID: &str = "0oaodd1guy51rqnJo357";
+#[allow(dead_code)]
+const CACHE_TTL_SECS: u64 = 60 * 60; // 1 hour
+
+// These structures are used during deserialization in the login flow
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct InteractResponse {
+    #[serde(rename = "interaction_handle")]
+    interaction_handle: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct StateHandleResponse {
+    #[serde(rename = "stateHandle")]
+    state_handle: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct AuthServiceResponse {
+    token: String,
+}
 
 #[derive(Debug)]
 pub struct ChurchClient {
@@ -28,81 +57,103 @@ pub struct ChurchClient {
     cookie_store: Arc<CookieStoreMutex>,
     pub env: env::Env,
     bearer_token: Option<BearerToken>,
-    //pub holly_config: Option<crate::holly::config::Config>,
 }
 
 impl ChurchClient {
     pub async fn new(env: env::Env) -> anyhow::Result<Self> {
-        // Check if the bearer token exists
-        let bearer_path = PathBuf::from_str(&env.working_path)?.join("bearer.token");
-        let cookies_path = PathBuf::from_str(&env.working_path)?.join("cookies.json");
+        let working_path = PathBuf::from(&env.working_path);
+        let bearer_path = working_path.join("bearer.token");
+        let cookies_path = working_path.join("cookies.json");
 
-        let bearer_token = if let Ok(b) = std::fs::read_to_string(&bearer_path) {
-            Some(BearerToken::from_base64(b)?)
-        } else {
-            info!("No bearer token saved");
-            None
-        };
-        // Check if the file exists
-        if !std::fs::exists(&cookies_path)? {
-            info!("No cookies saved");
-            std::fs::write(&cookies_path, "".as_bytes())?;
+        // Load existing bearer token if available
+        let bearer_token = std::fs::read_to_string(&bearer_path)
+            .ok()
+            .and_then(|b| BearerToken::from_base64(b).ok())
+            .inspect(|_| info!("Loaded cached bearer token"));
+
+        // Ensure cookies file exists
+        if !cookies_path.exists() {
+            std::fs::write(&cookies_path, b"")?;
         }
-        let cookie_store = {
-            let file = std::fs::File::open(&cookies_path)
-                .map(std::io::BufReader::new)
-                .unwrap();
-            // use re-exported version of `CookieStore` for crate compatibility
-            reqwest_cookie_store::CookieStore::load_json(file).unwrap()
-        };
-        let cookie_store = reqwest_cookie_store::CookieStoreMutex::new(cookie_store);
-        let cookie_store = std::sync::Arc::new(cookie_store);
 
-        let http_client = Client::builder()
-            .user_agent(USER_AGENT)
-            .cookie_provider(Arc::clone(&cookie_store))
-            .redirect(Policy::custom(|a| {
-                if a.previous().len() > 2 {
-                    a.stop()
-                } else {
-                    info!("Redirecting to {}", a.url());
-                    a.follow()
-                }
-            }))
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .expect("Couldn't build the HTTP client");
+        let cookie_store = Self::load_cookie_store(&cookies_path)?;
+        let http_client = Self::build_http_client(&cookie_store)?;
 
-        //let holly_config = crate::holly::config::Config::potential_load(&env).await?;
         Ok(Self {
             http_client,
             cookie_store,
             env,
             bearer_token,
-            //holly_config,
         })
+    }
+
+    fn load_cookie_store(
+        cookies_path: &PathBuf,
+    ) -> anyhow::Result<Arc<CookieStoreMutex>> {
+        let cookie_store = if cookies_path.exists() {
+            let file = std::fs::File::open(cookies_path)
+                .map(std::io::BufReader::new)
+                .ok();
+            if let Some(file) = file {
+                #[allow(deprecated)]
+                reqwest_cookie_store::CookieStore::load_json(file).unwrap_or_else(|_| {
+                    #[allow(deprecated)]
+                    let store = reqwest_cookie_store::CookieStore::default();
+                    store
+                })
+            } else {
+                #[allow(deprecated)]
+                let store = reqwest_cookie_store::CookieStore::default();
+                store
+            }
+        } else {
+            #[allow(deprecated)]
+            let store = reqwest_cookie_store::CookieStore::default();
+            store
+        };
+
+        Ok(Arc::new(CookieStoreMutex::new(cookie_store)))
+    }
+
+    fn build_http_client(
+        cookie_store: &Arc<CookieStoreMutex>,
+    ) -> anyhow::Result<Client> {
+        Client::builder()
+            .user_agent(USER_AGENT)
+            .cookie_provider(Arc::clone(cookie_store))
+            .redirect(Policy::custom(|attempt| {
+                if attempt.previous().len() > 2 {
+                    info!("Stopping redirect chain at {} redirects", attempt.previous().len());
+                    attempt.stop()
+                } else {
+                    info!("Following redirect to {}", attempt.url());
+                    attempt.follow()
+                }
+            }))
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .context("Failed to build HTTP client")
     }
 
     pub async fn save_cookies(&self) -> anyhow::Result<()> {
         info!("Saving cookies");
-        let cookies_path = PathBuf::from_str(&self.env.working_path)?.join("cookies.json");
-        let mut writer = std::fs::File::create(&cookies_path)
-            .map(std::io::BufWriter::new)
-            .unwrap();
+        let cookies_path = PathBuf::from(&self.env.working_path).join("cookies.json");
+        let mut file = std::fs::File::create(&cookies_path)
+            .map(std::io::BufWriter::new)?;
+
         let store = self.cookie_store.lock().unwrap();
+        #[allow(deprecated)]
         store
-            .save_incl_expired_and_nonpersistent_json(&mut writer)
-            .unwrap();
+            .save_incl_expired_and_nonpersistent_json(&mut file)
+            .map_err(|e| anyhow::anyhow!("Failed to save cookies: {}", e))?;
+
         Ok(())
     }
 
     async fn write_bearer_token(&self, token: &str) -> anyhow::Result<()> {
         info!("Saving bearer token");
-        let bearer_path = PathBuf::from_str(&self.env.working_path)?.join("bearer.token");
-        let mut writer = std::fs::File::create(&bearer_path)
-            .map(std::io::BufWriter::new)
-            .unwrap();
-        writer.write_all(token.as_bytes())?;
+        let bearer_path = PathBuf::from(&self.env.working_path).join("bearer.token");
+        std::fs::write(&bearer_path, token).context("Failed to write bearer token")?;
         Ok(())
     }
 
@@ -146,6 +197,49 @@ impl ChurchClient {
         let code_challenge = generate_code_challenge(&code_verifier);
         let state = generate_random_string(32);
         let nonce = generate_random_string(32);
+        // println!("code_verifier: {}", code_verifier);
+        // println!("code_challenge: {}", code_challenge);
+        // println!("state: {}", state);
+        // println!("nonce: {}", nonce);
+        
+        // First, visit referralmanager.churchofjesuschrist.org to capture the redirect Location header
+        info!("Visiting referralmanager.churchofjesuschrist.org to capture redirect");
+        let no_redirect_client = reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .cookie_provider(Arc::clone(&self.cookie_store))
+            .redirect(Policy::none())
+            .timeout(std::time::Duration::from_secs(60))
+            .build()?;
+
+        let redirect_res = no_redirect_client
+            .get("https://referralmanager.churchofjesuschrist.org/")
+            .send()
+            .await?;
+
+        // println!("referralmanager redirect status: {}", redirect_res.status());
+        let mut location_url = String::new();
+        if let Some(loc) = redirect_res.headers().get(reqwest::header::LOCATION) {
+            let location = loc.to_str().unwrap_or("<invalid-utf8>");
+            // println!("referralmanager Location header: {}", location);
+            location_url = location.to_string();
+        }
+        for (_name, _value) in redirect_res.headers().iter() {
+            // Headers intentionally unused - preserved for future debugging
+        }
+
+        // Follow the Location URL
+        if !location_url.is_empty() {
+            info!("Following redirect to: {}", location_url);
+            let location_res = self
+                .http_client
+                .get(&location_url)
+                .send()
+                .await?;
+
+            // println!("Location URL response status: {}", location_res.status());
+            let _location_body = location_res.text().await?;
+            // println!("Location URL response body (len={}): {}", location_body.len(), location_body);
+        }
 
         info!("Calling /interact to get interactionHandle");
         let interact_response = self
@@ -182,15 +276,6 @@ impl ChurchClient {
             .json::<StateHandle>()
             .await?
             .state_handle;
-
-
-            // let status = state_handle.status();
-            // let text = state_handle.text().await?;
-            // println!("Status: {}", status);
-            // println!("Raw response body:\n{}", text);
-            
-            // println!("state_handle: {}", state_handle);
-
 
         // Send the username
         info!("Sending the username");
@@ -265,12 +350,12 @@ impl ChurchClient {
             // println!("state_handle after challenge: {}", state_handle);
 
         // Send the password
-        #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
         struct PasswordResponse {
             success: SuccessResponse,
         }
 
-        #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
         struct SuccessResponse {
             href: String,
         }
@@ -284,7 +369,8 @@ impl ChurchClient {
         })
         .to_string();
         // println!("Password body: {}", body);
-        let challenge_answer_response = self
+
+        let _challenge_answer_response: serde_json::Value = self
             .http_client
             .post("https://id.churchofjesuschrist.org/idp/idx/challenge/answer")
             .header("Content-Type", "application/json")
@@ -292,35 +378,47 @@ impl ChurchClient {
             .body(body)
             .send()
             .await?
-            .json::<PasswordResponse>()
-            .await?;
-            // EVERYTHING BREAK ABOVE THIS LINE
-            println!("challenge_answer_response: {:?}", challenge_answer_response);
-
-        // Set cookies
-        info!("Getting the success href");
-        self.http_client
-            .get(challenge_answer_response.success.href)
-            .send()
+            .json()
             .await?;
 
+        // Use the location URL from the first redirect and add okta=true
+        info!("Calling /authorize using location URL with okta=true");
+        if !location_url.is_empty() {
+            // Parse the location URL and add okta=true parameter
+            let mut authorize_url = url::Url::parse(&location_url)?;
+            authorize_url.query_pairs_mut().append_pair("okta", "true");
+
+            let authorize_res = self
+                .http_client
+                .get(authorize_url.as_str())
+                .send()
+                .await?;
+
+            info!("Authorize Response Status: {}", authorize_res.status());
+            let authorize_response = authorize_res.text().await?;
+            info!("Authorize response (len={})", authorize_response.len());
+        } else {
+            info!("Location URL was empty, skipping /authorize call");
+        }
+        
         // Get the bearer token
         info!("Getting the bearer token");
-        let token = self
+        let token_res = self
             .http_client
             .get("https://referralmanager.churchofjesuschrist.org/services/auth")
             .header("Accept", "application/json")
             .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?
-            .clone();
-            println!("Raw token from JSON: {}", token);
-        let token = (match token {
-            serde_json::Value::String(t) => Ok(t),
-            _ => Err(anyhow::anyhow!("No token in response json")),
-        })?;
-        println!("Raw token: {}", token);
+            .await?;
+
+        let token_body = token_res.text().await?;
+        info!("Received bearer token response (len={})", token_body.len());
+
+        let token_json = serde_json::from_str::<serde_json::Value>(&token_body)?;
+        let token = token_json["token"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("No 'token' key in response"))?
+            .to_string();
+        // println!("Raw token: {}", token);
         self.save_cookies().await?;
         self.write_bearer_token(&token).await?;
 
@@ -357,11 +455,11 @@ impl ChurchClient {
                     info!("Received {} people from referral manager", list.len());
                     return Ok(list);
                 } else {
-                    warn!("Getting the people list failed at JSON parse");
+                    info!("Getting the people list failed at JSON parse");
                     self.bearer_token = None;
                 }
             } else {
-                warn!("Getting the people list failed at the request");
+                info!("Getting the people list failed at the request");
                 self.bearer_token = None;
             }
         }
@@ -371,7 +469,7 @@ impl ChurchClient {
     /// Gets a cached list from referral manager to save trips to church servers.
     /// A cache will be considered 'hit' if the list is less than an hour old.
     pub async fn get_cached_people_list(&mut self) -> anyhow::Result<Vec<persons::Person>> {
-        let lists_path = PathBuf::from_str(&self.env.working_path)?.join("people_lists");
+        let lists_path = PathBuf::from(&self.env.working_path).join("people_lists");
         std::fs::create_dir_all(&lists_path)?;
 
         let now = SystemTime::now();
@@ -448,11 +546,11 @@ impl ChurchClient {
                     );
                     return Ok(list);
                 } else {
-                    warn!("Getting the timeline events list failed at JSON parse");
+                    info!("Getting the timeline events list failed at JSON parse");
                     self.login().await?;
                 }
             } else {
-                warn!("Getting the timeline events list failed at the request");
+                info!("Getting the timeline events list failed at the request");
                 self.login().await?;
             }
         }
@@ -515,17 +613,4 @@ impl ChurchClient {
         }
         Ok(None)
     }
-}
-
-/// Function to decode escape sequences including \xNN
-fn decode_escape_sequences(s: &str) -> anyhow::Result<String> {
-    // Replace URL encoded sequences
-    let decoded_string = s
-        .replace("\\x2D", "-") // Replace \x2D with '-'
-        .replace("\\x5F", "_") // Replace \x5F with '_'
-        .replace("\\x2E", ".") // Replace \x2E with '.'
-        .replace("\\x2F", "/") // Replace \x2F with '/'
-        .replace("\\x3D", "="); // Replace \x3D with '='
-
-    Ok(decoded_string.to_string())
 }
