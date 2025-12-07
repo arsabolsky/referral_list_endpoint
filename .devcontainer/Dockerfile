@@ -9,6 +9,8 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
         pkg-config \
         ca-certificates \
         git \
+        gcc-mingw-w64-x86-64 \
+
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
